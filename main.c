@@ -4,24 +4,33 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <limits.h>
+#include "filesystem.h"
 
-int Interpret(char *cmd)
+const char *envpath="/bin";
+
+int Interpret(const char *cmd)
 {
     if(!strcmp(cmd,"cd"))
         printf("This is an inner cmd.\n");
-    else if(!strcmp(cmd,"git"))
-    {
-        int pid=fork();
-        if(pid>0)   //父进程
-            wait(NULL);
-        else
-        {
-            execle("outcmd","outcmd",(char *)0,(char *)0);
-            exit(0);
-        }
-    }
     else if(!strcmp(cmd,"q"))
         return 0;
+    else
+    {
+        char filepath[PATH_MAX+1]={'\0'};
+        if(SearchFile(envpath,cmd,filepath))
+        {
+            int pid=fork();
+            if(pid>0)
+                wait(NULL);
+            else
+            {
+                execle(filepath,cmd,(char *)0,(char *)0);
+                exit(0);
+            }
+        }
+        else printf("Unknwon cmd.\n");
+    }
     return 1;
 }
 
