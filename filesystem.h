@@ -1,6 +1,7 @@
 #ifndef FILESYSTEM_H
 #define FILESYSTEM_H
 
+#include <sys/types.h>
 typedef struct dirnode
 {
     //用来存储访问过的文件夹的链表，避免文件树带环的情况
