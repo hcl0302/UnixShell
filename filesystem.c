@@ -63,7 +63,7 @@ int myftw(char *path, const char *file, char *filepath)
     int n;
     if(stat(path,&path_stat)!=0)
     {
-        printf("stat failed.\n");
+        //printf("stat failed.\n");
         return 0;
     }
     if(S_ISDIR(path_stat.st_mode)==0)   //路径是文件，判断文件名是否与目标文件相同

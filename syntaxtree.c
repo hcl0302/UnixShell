@@ -27,7 +27,7 @@ int GetTokens(char *input, char (*elem)[cmdlength_max], int *len)
     int start=0,end=0,i=0;
     for(;end<input_len;end++)
     {
-        if(input[end]=='|'||input[end]=='<'||input[end]=='>')
+        if(input[end]=='|'||input[end]=='<'||input[end]=='>'||input[end]=='&')
         {
             strncpy(elem[i++],&input[start],end-start); //复制运算符前面的一部分
             start=end+1;
@@ -43,7 +43,12 @@ int GetTokens(char *input, char (*elem)[cmdlength_max], int *len)
 Node *CreateTree(char (*elem)[cmdlength_max],int start, int end)
 {
     //把elem中的命令和操作符存到二叉树中
-    Node *tree;
+    Node *tree=NULL;
+    if(start>end)
+    {
+        //以"&"结尾的情形,其rchild=NULL
+        return NULL;
+    }
     if(start==end)
         //最后剩下的是单独的命令
     {
@@ -64,6 +69,12 @@ Node *CreateTree(char (*elem)[cmdlength_max],int start, int end)
     {
         for(i=start;i<=end;i++)
             if(elem[i][0]=='<'||elem[i][0]=='>')
+                sep=i;
+    }
+    if(sep==-1)
+    {
+        for(i=start;i<=end;i++)
+            if(elem[i][0]=='&')
                 sep=i;
     }
     if(sep==-1)
