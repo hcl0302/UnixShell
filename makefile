@@ -1,14 +1,16 @@
 All:main
-main:main.o filesystem.o function.o syntaxtree.o
-	cc -Wall -o main main.o filesystem.o function.o syntaxtree.o
+main:main.o navigation.o filesystem.o function.o syntaxtree.o
+	gcc -Wall -g -o main main.o navigation.o filesystem.o function.o syntaxtree.o -lreadline -lhistory -lncursesw -lmenuw -lpanelw
 main.o:main.c
-	cc -Wall -c main.c
-filesystem.o:filesystem.c
-	cc -Wall -c filesystem.c
-function.o:function.c
-	cc -Wall -c function.c
-syntaxtree.o:syntaxtree.c
-	cc -Wall -c syntaxtree.c
+	gcc -Wall -g -c main.c
+navigation.o:navigation.c navigation.h
+	gcc -Wall -g -c navigation.c
+filesystem.o:filesystem.c filesystem.h
+	gcc -Wall -g -c filesystem.c
+function.o:function.c function.h
+	gcc -Wall -g -c function.c
+syntaxtree.o:syntaxtree.c syntaxtree.h
+	gcc -Wall -g -c syntaxtree.c
 
 clean:
-	rm main main.o filesystem.o function.o syntaxtree.o
+	rm main main.o filesystem.o function.o syntaxtree.o navigation.o
