@@ -2,6 +2,9 @@
 #define FILESYSTEM_H
 
 #include <sys/types.h>
+#define cmd_length 30
+#define cmd_option_nummax 50
+
 typedef struct dirnode
 {
     //用来存储访问过的文件夹的链表，避免文件树带环的情况
@@ -23,5 +26,11 @@ int traverse(dirnode *head, ino_t inode);
 int myftw(char *path, const char *file, char *filepath);
 
 int SearchFile(const char *envpath, const char *file, char *filepath);
+
+/*遍历目录查找备选命令*/
+int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num);
+
+/*根据关键字查找备选命令*/
+int SearchCmdOption(const char *envpath, const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num);
 
 #endif
