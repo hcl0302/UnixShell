@@ -1,332 +1,238 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <sys/types.h>
-#include <sys/wait.h>
+#include <unistd.h>
 #include <signal.h>
-#include <limits.h>
+#include <readline/readline.h>
+#include <readline/history.h>
+#include <errno.h>
+#include <sys/utsname.h>
 #include "filesystem.h"
 #include "function.h"
 #include "syntaxtree.h"
 
-#define envpath_count 10
-#define argv_num 3
-#define argv_length 20
+#define path_max 1024
 #define cmd_length 30
-#define jobnum_max 10
-const char envpath[envpath_count][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
-
-typedef struct Job
-{
-    int status; //1表示正常运行,0表示退出,2表示停止,-1表示移到前台运行
-    int pid;
-    char cmd[cmd_length]; //指向argv
-}Job;
-
-typedef struct JobManage
-{
-    Job jobs[jobnum_max];   //存放Pid,cmd,状态信息
-    int jobnum;
-}JobManage;
+#define cmd_option_nummax 50
+#define envpath_count 8
 
 JobManage jobmanager;
 
-void BackGround(int pid)  
-{
-    if(pid>0)
-    {
-    kill(pid,SIGCONT);
-     //pid_jobs[jobs_num--]=0;
-     //不要忘记对jobs进行更改
-    }
-}
+char currentpath[path_max];
+char welcome_info[path_max];
+int welcome_len;
+extern int run_pid;
 
-void ForeGround(char *p)
-{
-    if(p!=NULL)
-    {
-        int jobnum=atoi(p);
-        int pid=jobmanager.jobs[jobnum-1].pid;
-        //从Jobs列表删除
-        jobmanager.jobs[jobnum-1].status=-1;
-        printf("%s",jobmanager.jobs[jobnum-1].cmd);
-        //进程移到前台
-        kill(pid,SIGSTOP);
-        kill(pid,SIGCONT);
-        waitpid(pid,NULL,0);
-    }
-}    
+const char envpath[envpath_count][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
 
-void StopPid(char *p)
-{
-    if(p!=NULL)
-    {
-        int jobnum=atoi(p);
-        int pid=jobmanager.jobs[jobnum-1].pid;
-        kill(pid,SIGSTOP);
-    }
-}
+/*内建命令定义*/
+CmdFmt command_list[5]={    //命令名+函数指针
+    {"history",catHistory},
+    {"cd",ChangeDir},
+    {"exit",Exit},
+    {NULL,NULL}
+};
 
-void ContinuePid(char *p)
+int key_stop()
 {
-    if(p!=NULL)
-    {
-        int jobnum=atoi(p);
-        int pid=jobmanager.jobs[jobnum-1].pid;
-        kill(pid,SIGCONT);
-    }
-}
-
-void ShowJobs()
-{
-    int i=0;
-    while(i<jobmanager.jobnum && jobmanager.jobs[i].status>0)
-    {
-        printf("[%d]  ",i+1);
-        switch(jobmanager.jobs[i].status)
-        {
-            case 1:
-                printf("运行中  ");
-                break;
-            case 2:
-                printf("已停止  ");
-                break;
-        }
-        printf("%s\n",jobmanager.jobs[i].cmd);
-        i++;
-    }
-}
-
-char **ResolveCmd(const char *cmd,int *argc)
-{
-    int i=0,j=0,k=0,cmd_count=1;
-    for(;i<strlen(cmd);i++)
-    {
-        if(cmd[i]==' '&&i+1<strlen(cmd))
-            cmd_count++;
-    }
-    char **argv;
-    argv=(char **)malloc((cmd_count+1)*sizeof(char *)); //多分配一个用来表示结尾
-    for(i=0;i<cmd_count;i++)
-        argv[i]=(char *)malloc(argv_length*sizeof(char));
-    argv[i]=NULL;   //标识结尾
-    for(i=0;i<strlen(cmd);i++)
-    {
-        if(cmd[i]!=' ')
-            argv[j][k++]=cmd[i];
-        else
-        {
-            //下一个argv
-            argv[j][k]='\0';
-            j++;k=0;
-        }
-    }
-    //无空格结束也要加终止符号
-    argv[j][k]='\0';
-    *argc=cmd_count;
-    return argv;
-}
-
-int Interpret(const char *cmd, int redirect,char *target,int bg)
-{
-    //cmd中包含两部分,一是命令执行文件本省,第二是argv[]
-    int argc;
-    char **argv=ResolveCmd(cmd,&argc);
-    if(!strcmp(argv[0],"cd"))
-        printf("This is an inner cmd.\n");
-    else if(!strcmp(argv[0],"jobs"))
-    {
-        ShowJobs();
-    }
-    else if(!strcmp(argv[0],"fg"))
-    {
-        //前台运行
-        ForeGround(argv[1]);
-    }
-    else if(!strcmp(argv[0],"stop"))
-        StopPid(argv[1]);
-    else if(!strcmp(argv[0],"continue"))
-        ContinuePid(argv[1]);
-    else if(!strcmp(argv[0],"q"))
-        return 0;
-    else
-    {
-        char filepath[PATH_MAX+1]={'\0'};
-        int i=0,find=0;
-        while(!find && i<envpath_count)
-        {
-            //依次从各个环境变量的路径中寻找
-            find=SearchFile(envpath[i++],argv[0],filepath);
-        }
-        if(find && bg==0)
-        {
-            int pid=fork();
-            if(pid>0)
-                waitpid(pid,NULL,0);
-            else
-            {
-                if(redirect==1) OutputRedirect(target);
-                else if(redirect==0) InputRedirect(target);
-                execv(filepath,argv);
-                exit(0);
-            }
-           
-        }
-        else if(find && bg==1)
-        {
-            //后台运行
-            int pid=fork();
-            if(pid>0)
-            {
-                //父进程把后台进程添加到job管理系统中
-                int pos=0;  //找空位置,优先填满前面被删掉的位置
-                while(pos<jobmanager.jobnum && jobmanager.jobs[pos].status>0)
-                    pos++;
-                //结果是pos占到了jobnum之前的被删位置,或者是pos==jobnum
-                jobmanager.jobs[pos].pid=pid;
-                int i=0;
-                for(;i<strlen(cmd);i++)
-                    jobmanager.jobs[pos].cmd[i]=cmd[i]; //保存cmd信息
-                jobmanager.jobs[pos].cmd[i++]='&'; //保存cmd信息
-                jobmanager.jobs[pos].cmd[i]='\0'; //结尾
-                jobmanager.jobs[pos].status=1;   //正常运行 
-                if(pos==jobmanager.jobnum) {
-                    jobmanager.jobnum++;    //只有pos开辟了新的坑位时,才占位
-                    if(jobmanager.jobnum>jobnum_max)
-                        printf("jobs中的后台程序即将达到上限\n");
-                }
-                printf("[%d] %d",pos+1,pid);
-            }
-            else
-            {
-                //子进程负责后台执行
-                if(redirect==1) OutputRedirect(target);
-                else if(redirect==0) InputRedirect(target);
-                execv(filepath,argv);
-                exit(0);
-                //有个问题:子进程退了之后,父进程怎么查询?会出现相同pid的情况吗?貌似不会
-            }
-        }
-        else printf("Unknwon cmd.\n");
-    }
-     //程序结束后要清理argv
-    int i=0;
-    for(;i<argc;i++)
-    {
-        free(argv[i]);
-    }
-    free(argv);
-
+    printf("you pressed ctrl+c\n");
     return 1;
 }
 
-
-int ExecTree(Node *tree, int bg)
+int catHistory()
 {
-    if(tree==NULL) return 1;
-    if(tree->lchild==NULL && tree->rchild==NULL)
+    //显示历史命令
+    register HIST_ENTRY **the_list;
+    register int i;
+    the_list = history_list ();
+    if (the_list)
+        for (i = 0; the_list[i]; i++)
+            printf ("%d: %s\n", i + history_base, the_list[i]->line);
+    return 0;
+}
+
+
+char* getuser_dir(int uid)
+{
+    //得到运行该程序的客户的家目录
+    FILE *fp;
+    char buffer[path_max];
+    sprintf(buffer,"mawk -F: '{if($3==%d){print  $6}}' /etc/passwd",uid);
+    fp=popen(buffer,"r");
+    fgets(buffer,strlen(buffer),fp);
+    pclose(fp);
+    return strdup(buffer);
+}
+
+/*填充该程序的命令表TAB功能*/
+static char *command_generator(const char *text, int state)
+{   
+    const char *name;
+    static int list_index,len,search_env,cmd_index;
+    static char cmd_option[cmd_option_nummax][cmd_length];
+    if(!state)
     {
-        return Interpret(tree->data,-1,NULL,bg);
+      list_index=0;
+      len = strlen(text);
+      search_env=-1;
+      cmd_index=0;
     }
-    if(tree->data[0]=='&')
+    if(!len) return (char *)NULL;
+    //查找环境变量目录构建可用命令列表
+    if(search_env<0)
     {
-        if(ExecTree(tree->lchild,1) && ExecTree(tree->rchild,0))
+        int i=0;
+        search_env=0;
+        for(;i<envpath_count;i++)
+            search_env=SearchCmdOption(envpath[i],text,cmd_option,search_env);
+    }
+    while((name=command_list[list_index].name)!=NULL)
+    {
+      list_index++;
+      if(strncmp(name,text,len) == 0)
+      {
+         return strdup(name);
+      }
+    }
+    while(cmd_index<search_env)
+    {
+        name=cmd_option[cmd_index++];
+        return strdup(name);
+    }
+    return ((char *)NULL);
+}
+
+/*填充选项命令，该处暂忽略*/
+static char *option_generator(const char *text, int state)
+{
+    //static int list_index,len;
+    return NULL;
+}
+
+/*与readline库的命令填充接口*/
+
+char **readline_command_completion(const char *text, int start, int end)
+{
+    char **matches = (char **)NULL;
+    if(start == 0)
+        matches = rl_completion_matches(text,command_generator);
+    else
+        matches = rl_completion_matches(text,option_generator);
+    return matches;
+}
+
+/*readline初始化*/
+
+static int readline_init(char *History)
+{
+    //strcpy(currentpath,"currentpath");
+    char *userdir;
+    rl_readline_name="UnixShell";
+    rl_attempted_completion_function = readline_command_completion;
+    stifle_history(500);
+    userdir = getuser_dir(getuid());
+    if(strlen(userdir)>0 && userdir[strlen(userdir)-1]=='\n')
+        userdir[strlen(userdir)-1]='\0';
+    strcpy(currentpath,userdir);
+    sprintf(History,"%s/%s",userdir,".test_history");     
+    free(userdir);
+    read_history(History);
+    /*设置快捷键*/
+    //rl_bind_key('\t',key_stop);    
+    return 0;  
+
+}
+ 
+
+/*store the commands into History file*/
+static int readline_deinit(char *History)
+{
+    write_history(History);
+    return 0;
+}
+
+ 
+/*
+static int command_parse(char *cmdstr)
+{
+    const char *name;
+    char *cmdname;
+    int list_index=0;
+    char cmd[path_max];
+    strcpy(cmd,cmdstr);
+    cmdname=strtok(cmd," ");
+    if(cmdname==NULL)
+        return -1;
+    while((name=command_list[list_index].name)!=NULL)
+    {
+        if(!strcmp(name,cmdname))
+        {
+            printf("Find a command defined within program!\n");
+            command_list[list_index].handler();
             return 1;
-        else return 0;
-    }
-    if(tree->data[0]=='>')
-    {
-        return Interpret(tree->lchild->data,1,tree->rchild->data,bg);
-    }
-    else if(tree->data[0]=='<')
-    {
-        return Interpret(tree->lchild->data,0,tree->rchild->data,bg);
-    }
-    else if(tree->data[0]=='|')
-    {
-        int fds[2],pid;
-        pipe(fds);
-        pid=fork();
-        if(pid>0) //父进程
-        {
-            int sfd=dup(STDIN_FILENO);  //先把标准输入保存下来
-            dup2(fds[0],STDIN_FILENO);  //管道重定向到标准输入
-            close(fds[1]);  close(fds[0]);
-            ExecTree(tree->rchild,bg);
-            waitpid(pid,NULL,0);
-            dup2(sfd,STDIN_FILENO); //还原标准输入
         }
-        else    //子进程
-        {
-            dup2(fds[1],STDOUT_FILENO); //管道重定向到标准输出
-            close(fds[0]); close(fds[1]);
-            ExecTree(tree->lchild,bg); //这里的bg情况暂时搞不清楚
-            exit(0);
-        }
+        list_index++;
     }
-    return 1;
-    
-}
+    return 0;
+}*/
 
-static void sig_handler(int signum)  
+/*安装信号，用于管理后台进程和处理信号*/
+static void deal_signals()
 {
-    int pid,status,i=0;
-    while(i<jobmanager.jobnum && (pid=waitpid(jobmanager.jobs[i].pid,&status,WNOHANG|WUNTRACED|WCONTINUED))<=0)
-        i++;    //从jobs任务管理中寻找是否有后台的pid进程可回收
-    if(i==jobmanager.jobnum)
-    {
-        printf("A foreground thread has exited.\n");
-        return;
-    }
-    if(pid<0)  
+    
+    run_pid=0; //初始化全局变量,用于存储前台运行进程的pid
+    if((signal(SIGCHLD, sig_handler) == SIG_ERR)
+        ||(signal(SIGINT,sighandler_int))==SIG_ERR
+        ||(signal(SIGTSTP,sighandler_int))==SIG_ERR)
     {  
-        printf("waitpid error after signal\n");  
-    }
-    else if(pid>0 && WIFSTOPPED(status))
-    {
-        printf("child [%d] is stoped.\n",i+1);
-        jobmanager.jobs[i].status=2;
-    }
-    else if(pid>0 && (WIFEXITED(status)||WIFSIGNALED(status)))
-    {
-        //printf("child is exit.\n");
-        jobmanager.jobs[i].status=0;
-        printf("[%d] 已完成 %s\n",i+1,jobmanager.jobs[i].cmd);
-    }
-    else
-    {
-        printf("child [%d] is continued.\n",i+1);
-        jobmanager.jobs[i].status=1;
-    }
+        printf("signal error.\n");    
+    }  
     /*
-    if(WIFEXITED(status))
-        printf("child exit normally\n");
-    else if(WIFSIGNALED(status))
-        printf("child exit abnormally\n");
-    else if(WIFSTOPPED(status))
-        printf("child is stopped\n");
-        */
-        
-}  
+    sigset_t intmask;
+    sigemptyset(&intmask);// 将信号集合设置为空 
+    sigaddset(&intmask,SIGINT);// 加入中断 Ctrl+C 信号
+    sigaddset(&intmask,SIGTSTP);// 加入中断 Ctrl+z 信号
+    //阻塞信号
+    sigprocmask(SIG_BLOCK,&intmask,NULL);*/
+}
 
 int main()
 {
-    char cmd[50]={'\0'};
+    char *cmd=NULL;
     Node *tree=NULL;
     jobmanager.jobnum=0;
-    //安装信号,用于管理后台进程
-    if(signal(SIGCHLD, sig_handler) == SIG_ERR)  
-    {  
-        printf("signal error.\n");  
-        return 0;  
-    }  
-    do{
+    char History[path_max]; // history_dir/history_file，记录历史命令的文件地址
+
+    
+    deal_signals(); //安装和屏蔽信号
+
+    /*前缀信息准备,初始化readline*/
+    
+    char *username=getlogin();
+    struct utsname uts;
+    if(uname(&uts)<0)
+    {
+        printf("无法获得主机信息\n");
+    }
+    readline_init(History);
+    sprintf(welcome_info,"%s@%s:",username,uts.sysname);
+    welcome_len=strlen(welcome_info);
+
+    /*初始化工作目录和欢迎信息*/
+    ChangeDir(currentpath);
+
+    /*接收和处理命令*/
+    do
+    {
+        if(cmd!=NULL)
+        {
+            free(cmd); cmd=NULL;
+        }
         DeleteTree(tree);
-        fgets(cmd,sizeof(cmd),stdin);
-        cmd[strlen(cmd)-1]='\0';
+        cmd=readline(welcome_info);
+        add_history(cmd);
         tree=CreateSyntaxTree(cmd);
     }while(ExecTree(tree,0));
-    
+    readline_deinit(History);
     return 0;
 }
