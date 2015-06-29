@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 
 #define menu_max 50
-#define filename_max 50
+#define filename_max 100
 
 /*定义菜单组合结构体*/
 
@@ -294,8 +294,11 @@ int Navigation(char *finalpath)
                             const char *name=item_name(item);
                             strcpy(dname,name);
                             //pos_menu_cursor(my_menu);     定位光标
-                            currentdir[dir_len]='/';
-                            strcpy(&currentdir[dir_len+1],dname);
+                            if(dir_len==0 || currentdir[dir_len-1]!='/')
+                            {
+                                currentdir[dir_len]='/'; strcpy(&currentdir[dir_len+1],dname);
+                            }
+                            else strcpy(&currentdir[dir_len],dname);
                             if(IsDir(currentdir)) {
                                 dir_len=strlen(currentdir);
                                 menu_num++;

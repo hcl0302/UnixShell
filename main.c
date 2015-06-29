@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -12,30 +13,68 @@
 #include "syntaxtree.h"
 
 #define path_max 1024
-#define cmd_length 30
+#define cmd_length 50
 #define cmd_option_nummax 50
-#define envpath_count 8
+#define envpath_count_max 15
 
-JobManage jobmanager;
+JobManage jobmanager;   //管理后台任务
 
-char currentpath[path_max];
-char welcome_info[path_max];
-int welcome_len;
-extern int run_pid;
+char currentpath[path_max]; //当前工作路径
+char welcome_info[path_max];    //命令提示符信息
+int welcome_len;    //命令提示符插入工作路径的位置
+extern int run_pid; //前台运行进程的pid
 
-const char envpath[envpath_count][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
-
+/*环境变量*/
+char envpath_file[path_max];    //存放环境变量的文件:userdir/.test_path
+char envpath[envpath_count_max][100];
+//={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
+int envpath_num;
 /*内建命令定义*/
-CmdFmt command_list[5]={    //命令名+函数指针
-    {"history",catHistory},
-    {"cd",ChangeDir},
-    {"exit",Exit},
-    {NULL,NULL}
+CmdFmt command_list[10]={    //命令名+函数指针
+    {"history",catHistory},{"cd",ChangeDir},{"exit",Exit},{"jobs",NULL},{"bg",NULL},{"fg",NULL},{"echopath",NULL},{"addpath",NULL},{NULL,NULL}
 };
 
-int key_stop()
+/*常用命令定义,用于空命令时Tab的提示*/
+CmdFmt command_use[10]={
+    {"eog",NULL},{"evince",NULL},{"dot",NULL},{"transmageddon",NULL},{"kazam",NULL},{NULL,NULL}
+};
+
+/*导入环境变量*/
+int loadEnvpath()
 {
-    printf("you pressed ctrl+c\n");
+    //如果不存在，先建立文件并写入初始的path（判断是否成功），然后导入
+    int fd;
+    if((fd=open(envpath_file,O_RDONLY,0))<0)   //如果文件不存在
+    {
+        if((fd=open(envpath_file,O_WRONLY|O_CREAT,0600))<0) return 0;    //创建文件
+        char path0[8][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
+        int i;
+        for(i=0;i<8;i++)
+        {
+            write(fd,path0[i],strlen(path0[i])); write(fd,";",1);
+            strcpy(envpath[i],path0[i]);
+        }
+        envpath[i][0]='\0';
+        envpath_num=8;
+    }
+    else    //文件已存在，导入环境变量
+    {
+        char buf[4096]; ssize_t size;
+        size=read(fd,buf,4096);
+        int i=0,j=0,cur=0;
+        while(cur<size)
+        {
+            if(buf[cur]==';')
+            {
+                envpath[i++][j]='\0'; j=0;
+            }
+            else if(buf[cur]!=' '&&buf[cur]!='\n') envpath[i][j++]=buf[cur];
+            cur++;
+        }
+        envpath[i][j]='\0';
+        envpath_num=i;
+    }
+    close(fd);
     return 1;
 }
 
@@ -68,36 +107,47 @@ char* getuser_dir(int uid)
 static char *command_generator(const char *text, int state)
 {   
     const char *name;
-    static int list_index,len,search_env,cmd_index;
+    static int list_index,len,search_env,cmd_index,use_index;
     static char cmd_option[cmd_option_nummax][cmd_length];
     if(!state)
     {
       list_index=0;
+      use_index=0;
       len = strlen(text);
       search_env=-1;
       cmd_index=0;
     }
-    if(!len) return (char *)NULL;
-    //查找环境变量目录构建可用命令列表
-    if(search_env<0)
+    if(!len)
     {
-        int i=0;
-        search_env=0;
-        for(;i<envpath_count;i++)
-            search_env=SearchCmdOption(envpath[i],text,cmd_option,search_env);
+        //提示常用命令
+        while((name=command_use[use_index].name)!=NULL)
+        {
+            use_index++; return strdup(name);
+        }
     }
-    while((name=command_list[list_index].name)!=NULL)
+    else 
     {
-      list_index++;
-      if(strncmp(name,text,len) == 0)
-      {
-         return strdup(name);
-      }
-    }
-    while(cmd_index<search_env)
-    {
-        name=cmd_option[cmd_index++];
-        return strdup(name);
+        //查找环境变量目录构建可用命令列表
+        if(search_env<0)
+        {
+            int i=0;
+            search_env=0;
+            for(;i<envpath_num;i++)
+                SearchCmdOption(envpath[i],text,cmd_option,&search_env);
+        }
+        while((name=command_list[list_index].name)!=NULL)
+        {
+          list_index++;
+          if(strncmp(name,text,len) == 0)
+          {
+             return strdup(name);
+          }
+        }
+        while(cmd_index<search_env)
+        {
+            name=cmd_option[cmd_index++];
+            return strdup(name);
+        }
     }
     return ((char *)NULL);
 }
@@ -128,15 +178,16 @@ static int readline_init(char *History)
     //strcpy(currentpath,"currentpath");
     char *userdir;
     rl_readline_name="UnixShell";
-    rl_attempted_completion_function = readline_command_completion;
+    rl_attempted_completion_function = readline_command_completion; //自动补全接口
     stifle_history(500);
-    userdir = getuser_dir(getuid());
+    userdir = getuser_dir(getuid());    //获取用户家目录
     if(strlen(userdir)>0 && userdir[strlen(userdir)-1]=='\n')
         userdir[strlen(userdir)-1]='\0';
     strcpy(currentpath,userdir);
-    sprintf(History,"%s/%s",userdir,".test_history");     
+    sprintf(History,"%s/%s",userdir,".test_history");   //存储历史记录的文件位置
+    sprintf(envpath_file,"%s/%s",userdir,".test_path"); //存储环境变量的文件位置
     free(userdir);
-    read_history(History);
+    read_history(History);  //读取历史记录
     /*设置快捷键*/
     //rl_bind_key('\t',key_stop);    
     return 0;  
@@ -181,7 +232,7 @@ static void deal_signals()
 {
     
     run_pid=0; //初始化全局变量,用于存储前台运行进程的pid
-    if((signal(SIGCHLD, sig_handler) == SIG_ERR)
+    if((signal(SIGCHLD, sighandler_chld) == SIG_ERR)
         ||(signal(SIGINT,sighandler_int))==SIG_ERR
         ||(signal(SIGTSTP,sighandler_int))==SIG_ERR)
     {  
@@ -206,7 +257,7 @@ int main()
     
     deal_signals(); //安装和屏蔽信号
 
-    /*前缀信息准备,初始化readline*/
+    /*初始化readline*/
     
     char *username=getlogin();
     struct utsname uts;
@@ -215,10 +266,15 @@ int main()
         printf("无法获得主机信息\n");
     }
     readline_init(History);
+
+    /*导入环境变量*/
+    if(!loadEnvpath()) printf("从路径'%s'导入环境变量失败！无法创建新文件存储环境变量\n",envpath_file);;
+    
+    /*准备命令提示符*/
     sprintf(welcome_info,"%s@%s:",username,uts.sysname);
     welcome_len=strlen(welcome_info);
 
-    /*初始化工作目录和欢迎信息*/
+    /*初始化工作目录*/
     ChangeDir(currentpath);
 
     /*接收和处理命令*/

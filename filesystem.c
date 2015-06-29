@@ -130,8 +130,18 @@ int SearchFile(const char *envpath, const char *file, char *filepath)
     return finished;
 }
 
+/*对于运行EXE文件的命令*/
+int isEXE(char *cmd) //判断是否输入的命令指向一个EXEfile
+{
+   int len=strlen(cmd),i;
+   for(i=0;i<len;i++)
+       if(cmd[i]=='/')
+           return 1;
+   return 0;
+}
+
 /*遍历目录查找备选命令*/
-int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num)
+int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cmd_length], int *option_num)
 {
     struct stat path_stat;
     struct dirent *dirp;
@@ -150,9 +160,12 @@ int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cm
         for(n+=1;n<strlen(path);n++) name[i++]=path[n];
         if(!strncmp(name,text,strlen(text))) 
         {
-            if(option_num<cmd_option_nummax)
-                strcpy(cmd_option[option_num],name);
-            return 1;
+            if(*option_num<cmd_option_nummax)    //没达到上限
+            {
+                strcpy(cmd_option[*option_num],name);
+                *option_num=*option_num+1;
+                return 1;
+            }
         }
         return 0;
     }
@@ -171,20 +184,20 @@ int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cm
             if(strcmp(dirp->d_name,".")==0 || strcmp(dirp->d_name,"..")==0)  //跳过.和..这两个软链接
                 continue;
             strcpy(&path[n],dirp->d_name);
-            option_num+=fillcmdop(path,text,cmd_option,option_num);
+            fillcmdop(path,text,cmd_option,option_num);
         }
         closedir(dp); //关闭文件夹
     }
-    return option_num;
+    return 1;
 }
 
 /*根据关键字查找备选命令*/
-int SearchCmdOption(const char *envpath, const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num)
+int SearchCmdOption(const char *envpath, const char *text, char cmd_option[cmd_option_nummax][cmd_length], int *option_num)
 {
     dirlist=createlist(dirlist);
     char path[PATH_MAX+1]={'\0'};
     strcpy(path,envpath);
-    int finished=fillcmdop(path,text,cmd_option,option_num);
+    fillcmdop(path,text,cmd_option,option_num);
     deletelist(dirlist);
-    return finished;
+    return 1;
 }

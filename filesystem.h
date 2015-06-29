@@ -2,7 +2,7 @@
 #define FILESYSTEM_H
 
 #include <sys/types.h>
-#define cmd_length 30
+#define cmd_length 50
 #define cmd_option_nummax 50
 
 typedef struct dirnode
@@ -27,10 +27,15 @@ int myftw(char *path, const char *file, char *filepath);
 
 int SearchFile(const char *envpath, const char *file, char *filepath);
 
+/*对于运行EXE文件的命令*/
+int isEXE(char *cmd); //判断是否输入的命令指向一个EXEfile
+
+/*下面用于readline的命令自动补全*/
+
 /*遍历目录查找备选命令*/
-int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num);
+int fillcmdop(char *path,const char *text, char cmd_option[cmd_option_nummax][cmd_length], int *option_num);
 
 /*根据关键字查找备选命令*/
-int SearchCmdOption(const char *envpath, const char *text, char cmd_option[cmd_option_nummax][cmd_length], int option_num);
+int SearchCmdOption(const char *envpath, const char *text, char cmd_option[cmd_option_nummax][cmd_length], int *option_num);
 
 #endif

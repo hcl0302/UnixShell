@@ -11,20 +11,48 @@
 #include "function.h"
 #include "navigation.h"
 
-#define envpath_count 8
-#define argv_num 3
-#define argv_length 30
+#define envpath_count_max 15
+#define argv_num 10
+#define argv_length 100
 #define path_max 1024
 
-extern char currentpath[path_max];
-extern char welcome_info[path_max];
-extern int welcome_len;
-extern const char envpath[envpath_count][30];
-//const char envpath[envpath_count][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
+extern char currentpath[path_max];  //当前工作目录
+extern char welcome_info[path_max]; //命令提示符
+extern int welcome_len; //命令提示符插入工作路径位置
+extern char envpath[envpath_count_max][100];    //环境变量
+extern char envpath_file[path_max]; //环境变量位置
+extern int envpath_num; //环境变量数目
+//const char envpath[envpath_count_max][30]={"/usr/local/sbin","/usr/local/bin","/usr/sbin","/usr/bin","/sbin","/bin","/usr/games","/usr/local/games"};
 
-extern JobManage jobmanager;
+extern JobManage jobmanager;    //管理后台
 int run_pid;    //记录前台运行的子进程pid
 char run_cmd[cmd_length];    //记录前台运行的子进程cmd
+
+/*环境变量相关*/
+void EchoPath() //查看环境变量
+{
+    int i=0;
+    for(;i<envpath_num;i++)
+        printf("%s\n",envpath[i]);
+}
+
+void AddPath(char *newpath)  //添加环境变量
+{
+    int len=strlen(newpath);
+    if(len==0) return;
+    strcpy(envpath[envpath_num],newpath);
+    envpath_num++; envpath[envpath_num][0]='\0';
+    //写入文件
+    int fd;
+    if((fd=open(envpath_file,O_WRONLY,0600))<0)
+    {
+        printf("无法打开环境变量文件%s\n",envpath_file); return;
+    }
+    lseek(fd,0,SEEK_END);
+    write(fd,newpath,len);
+    write(fd,";",1);
+    close(fd);
+}
 
 /*job相关函数实现*/
 
@@ -44,8 +72,8 @@ void ForeGround(char *p)    //前台运行
         jobmanager.jobs[jobnum-1].status=-1;
         printf("%s\n",jobmanager.jobs[jobnum-1].cmd);
         //进程移到前台
-        kill(pid,SIGSTOP);
-        kill(pid,SIGCONT);
+        //kill(pid,SIGSTOP);
+        //kill(pid,SIGCONT);
         waitpid(pid,NULL,WUNTRACED);
         run_pid=0; run_cmd[0]='\0';
     }
@@ -97,7 +125,7 @@ void ShowJobs() //显示jobs里的后台进程
 
 /*信号,管理后台程序*/
 
-void sig_handler(int signum)  
+void sighandler_chld(int signum)  
 {
     int pid,status,i=0;
     while(i<jobmanager.jobnum && (pid=waitpid(jobmanager.jobs[i].pid,&status,WNOHANG|WUNTRACED|WCONTINUED))<=0)
@@ -186,20 +214,21 @@ static void mask_signals()
     sigprocmask(SIG_BLOCK,&intmask,NULL);
 }
 
-/*解除屏蔽Ctrl+C信号处理*/
+/*解除屏蔽Ctrl+C信号处理
 static void unmask_signals()
 {
     sigset_t intmask;
-    sigemptyset(&intmask);/* 将信号集合设置为空 */
-    sigaddset(&intmask,SIGINT);/* 加入中断 Ctrl+C 信号*/
-    /*阻塞信号*/
+    sigemptyset(&intmask);// 将信号集合设置为空 
+    sigaddset(&intmask,SIGINT);// 加入中断 Ctrl+C 信号
+    //阻塞信号
     sigprocmask(SIG_UNBLOCK,&intmask,NULL);
-}
+}*/
 
 /*输入输出重定向相关函数实现*/
 
 int OutputRedirect(char *output)
 {
+    //输出重定向
     int fd;
     if((fd=open(output,O_WRONLY|O_CREAT|O_TRUNC))==-1)
     {
@@ -212,6 +241,7 @@ int OutputRedirect(char *output)
 
 int InputRedirect(char *input)
 {
+    //输入重定向
     int fd;
     if((fd=open(input,O_RDONLY))==-1)
     {
@@ -226,6 +256,7 @@ int InputRedirect(char *input)
 
 char **ResolveCmd(const char *cmd,int *argc)
 {
+    //分解单条命令为argv[]
     int i=0,j=0,k=0,cmd_count=1;
     for(;i<strlen(cmd);i++)
     {
@@ -256,6 +287,7 @@ char **ResolveCmd(const char *cmd,int *argc)
 
 int Interpret(const char *cmd, int redirect,char *target,int bg)
 {
+    //解析执行一条命令
     //cmd中包含两部分,一是命令执行文件本省,第二是argv[]
     if(strlen(cmd)==0) return 1;
     int argc;
@@ -286,18 +318,28 @@ int Interpret(const char *cmd, int redirect,char *target,int bg)
         ContinuePid(argv[1]);
     else if(!strcmp(argv[0],"history"))
         catHistory();
+    else if(!strcmp(argv[0],"echopath"))
+        EchoPath();
+    else if(!strcmp(argv[0],"addpath"))
+        AddPath(argv[1]);
     else if(!strcmp(argv[0],"exit"))
         return Exit();
     else
     {
-        char filepath[PATH_MAX+1]={'\0'};
         int i=0,find=0;
-        while(!find && i<envpath_count)
+        char filepath[PATH_MAX+1]={'\0'};
+        find=isEXE(argv[0]);    //输入的命令是否带'/'，可能指向EXEfile
+        if(find)
+            strcpy(filepath,argv[0]);
+        else    //从环境变量的目录中搜索
         {
-            //依次从各个环境变量的路径中寻找
-            find=SearchFile(envpath[i++],argv[0],filepath);
+            while(!find && i<envpath_num)
+            {
+                //依次从各个环境变量的路径中寻找
+                find=SearchFile(envpath[i++],argv[0],filepath);
+            }
         }
-        if(find && bg==0)
+        if(find && bg==0)   //找到命令,前台运行
         {
             int pid=fork(); run_pid=pid; strcpy(run_cmd,cmd);
             if(pid>0) {
@@ -307,13 +349,14 @@ int Interpret(const char *cmd, int redirect,char *target,int bg)
             {
                 if(redirect==1) OutputRedirect(target);
                 else if(redirect==0) InputRedirect(target);
-                mask_signals();     //屏蔽信号
-                execv(filepath,argv);
+                mask_signals();     //子进程屏蔽信号
+                if(execv(filepath,argv)==-1)
+                    printf("不能打开指定文件\n");
                 exit(0);
             }
            
         }
-        else if(find && bg==1)
+        else if(find && bg==1)  //找到命令,后台运行
         {
             //后台运行
             int pid=fork();
@@ -344,7 +387,8 @@ int Interpret(const char *cmd, int redirect,char *target,int bg)
                 if(redirect==1) OutputRedirect(target);
                 else if(redirect==0) InputRedirect(target);
                 mask_signals();     //信号屏蔽
-                execv(filepath,argv);
+                if(execv(filepath,argv)==-1)
+                    printf("不能打开指定文件\n");
                 exit(0);
                 //有个问题:子进程退了之后,父进程怎么查询?会出现相同pid的情况吗?貌似不会
             }
@@ -365,6 +409,7 @@ int Interpret(const char *cmd, int redirect,char *target,int bg)
 
 int ExecTree(Node *tree, int bg)
 {
+    //解析二叉树
     if(tree==NULL) return 1;
     if(tree->lchild==NULL && tree->rchild==NULL)
     {
@@ -412,15 +457,14 @@ int ExecTree(Node *tree, int bg)
 
 int ChangeDir(char *path)
 {
+    //改变工作目录
     if(!chdir(path))
     {
-        if(path[0]!='/') {
-            int len=strlen(currentpath);
-            currentpath[len++]='/';
-            strcpy(&currentpath[len],path);
+        if(getcwd(currentpath,sizeof(currentpath))==NULL)
+        {
+            printf("重新获取工作目录失败\n"); return 0;
         }
-        else strcpy(currentpath,path);
-        sprintf(&welcome_info[welcome_len],"%s$ ",path);
+        sprintf(&welcome_info[welcome_len],"%s$ ",currentpath);
         return 1;
     }
     printf("改变工作目录失败\n");
@@ -429,5 +473,6 @@ int ChangeDir(char *path)
 
 int Exit()
 {
+    //退出
     return 0;
 }

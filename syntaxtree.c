@@ -3,7 +3,7 @@
 #include <string.h>
 #include "syntaxtree.h"
 
-
+/*销毁一颗二叉树*/
 void DeleteTree(Node *tree)
 {
     //删除树,释放内存
@@ -16,7 +16,8 @@ void DeleteTree(Node *tree)
     }
 }
 
-int GetTokens(char *input, char (*elem)[cmdlength_max], int *len)
+/*把字符串按分隔符'|' '>' '<' '&'分割*/
+int GetTokens(char *input, char elem[cmdnumber_max][cmdlength_max], int *len)
 {
     //把input中的命令与操作符分开,分别存到elem二维数组里,并记录长度len
     int input_len=strlen(input);
@@ -40,7 +41,8 @@ int GetTokens(char *input, char (*elem)[cmdlength_max], int *len)
     return 1;
 }
 
-Node *CreateTree(char (*elem)[cmdlength_max],int start, int end)
+/*字符串片段转化为一颗二叉树*/
+Node *CreateTree(char elem[cmdnumber_max][cmdlength_max],int start, int end)
 {
     //把elem中的命令和操作符存到二叉树中
     Node *tree=NULL;
@@ -96,8 +98,10 @@ Node *CreateTree(char (*elem)[cmdlength_max],int start, int end)
     return tree;
 }
 
+/*从最初的字符串到最后的二叉树*/
 Node *CreateSyntaxTree(char *input)
 {
+    //将字符串转化为一颗二叉树
     char elem[cmdnumber_max][cmdlength_max];
     int end;
     memset(elem,'\0',sizeof(elem));
