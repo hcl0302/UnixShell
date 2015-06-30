@@ -229,8 +229,17 @@ static void unmask_signals()
 int OutputRedirect(char *output)
 {
     //输出重定向
+    char file[255];
+    int i=0,j=0;
+    while(output[i]==' ') i++;
+    for(;i<strlen(output);i++)
+    {
+        if(output[i]==' ') break;
+        file[j++]=output[i];
+    }
+    file[j]='\0';
     int fd;
-    if((fd=open(output,O_WRONLY|O_CREAT|O_TRUNC))==-1)
+    if((fd=open(file,O_WRONLY|O_CREAT|O_TRUNC))==-1)
     {
         printf("Cannot open.\n");
         return 0;
@@ -242,10 +251,19 @@ int OutputRedirect(char *output)
 int InputRedirect(char *input)
 {
     //输入重定向
-    int fd;
-    if((fd=open(input,O_RDONLY))==-1)
+    char file[255];
+    int i=0,j=0;
+    while(input[i]==' ') i++;
+    for(;i<strlen(input);i++)
     {
-        printf("没有名为%s的文件或目录\n",input);
+        if(input[i]==' ') break;
+        file[j++]=input[i];
+    }
+    file[j]='\0';
+    int fd;
+    if((fd=open(file,O_RDONLY))==-1)
+    {
+        printf("没有名为%s的文件或目录\n",file);
         return 0;
     }
     dup2(fd,STDIN_FILENO); //输入重定向到文件
