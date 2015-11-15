@@ -1,14 +1,14 @@
 # UnixShell
 
-####目前实现功能:   
-1.正常执行命令,如ls -l   
-2.管道: ls|wc|wc   
-3.输入输出重定向到文件:ls>out.txt, wc<out.txt   
-4.后台执行程序: gedit out.txt &   
-5.作业控制:jobs, fg, bg, ctrl+z, ctrl+c   
-6.历史命令:history   
-7.查看和增加环境变量:echopath, addpath    
-8.内建cd命令改变工作目录,如cd /usr   
-9.如果"cd"命令后没加参数,则进入图形化的"文件导航系统"   
-10.自动补全：命令名、文件名Tab自动补全，上下键历史命令，各种快捷键:ctrl+b, ctrl+f, ctrl+u, ctrl+k...    
+####Functions achieved:   
+1.Receive and run a command from users, such as "ls -l"   
+2.Handle commands with pipes, such as "ls|wc|wc"   
+3.I/O redirection: ls>out.txt, wc<out.txt   
+4.Run a program on background: gedit out.txt &   
+5.Job control: jobs, fg, bg, ctrl+z, ctrl+c   
+6.View history commands: history   
+7.View and add environmental variables: echopath, addpath    
+8.Change work directory with the build-in command: cd /usr   
+9.Enter the files navigation system if inputting command "cd" without any parameters   
+10.Autocompleting：Press TAB to autocomplete command names and file names; press the up or down arrow to reuse history commands; other common used keys are also enabled, such as ctrl+b, ctrl+f, ctrl+u, ctrl+k, and so on     
 ![filenavigation](/filenavigation.png)
